@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::{routing::get, routing::post, Router};
+use tower_http::limit::RequestBodyLimitLayer;
 use tokio::net::TcpListener;
 use tracing::info;
 
@@ -43,6 +44,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/health", get(ccr::handler::health))
         .route("/v1/responses", post(ccr::handler::responses_handler))
+        .layer(RequestBodyLimitLayer::new(state.config.server.max_body_size))
         .with_state(state);
 
     let addr = SocketAddr::new(host.parse()?, port);

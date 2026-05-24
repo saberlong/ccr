@@ -17,4 +17,4 @@ Cargo.lock
 
 /logs
 *.log
-config.toml
+/config.toml

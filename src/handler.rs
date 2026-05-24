@@ -40,19 +40,6 @@ pub async fn responses_handler(
         return Err(AppError::bad_request("请求体不能为空".to_string()));
     }
 
-    if body.len() > state.config.server.max_body_size {
-        error!(
-            body_size = body.len(),
-            max_size = state.config.server.max_body_size,
-            "请求体超过最大限制"
-        );
-        return Err(AppError::bad_request(format!(
-            "请求体大小 ({}) 超过最大限制 ({})",
-            body.len(),
-            state.config.server.max_body_size
-        )));
-    }
-
     let body_str = String::from_utf8_lossy(&body);
     debug!(request_body = %body_str, "原始请求内容");
 
@@ -272,7 +259,8 @@ async fn handle_stream_response(
     if streaming_config.enable_preflight {
         debug!("执行流预检测");
         let (saved_chunk, preflight_result) =
-            perform_stream_preflight_check(&mut resp, streaming_config.preflight_timeout_secs).await;
+            perform_stream_preflight_check(&mut resp, streaming_config.preflight_timeout_secs)
+                .await;
         if let Some(preflight_result) = preflight_result {
             warn!(
                 preflight_type = %preflight_result.detection_type,
@@ -292,8 +280,7 @@ async fn handle_stream_response(
         None::<crate::converter::stream::StreamState>,
     ));
     let completed_sent = Arc::new(AtomicBool::new(false));
-    let line_buf: Arc<std::sync::Mutex<String>> =
-        Arc::new(std::sync::Mutex::new(String::new()));
+    let line_buf: Arc<std::sync::Mutex<String>> = Arc::new(std::sync::Mutex::new(String::new()));
     let mut initial_chunks: Vec<Result<Bytes, reqwest::Error>> = Vec::new();
     if let Some(chunk) = preflight_chunk {
         initial_chunks.push(Ok(chunk));
@@ -680,11 +667,14 @@ async fn perform_stream_preflight_check(
             let text = String::from_utf8_lossy(&chunk).to_string();
 
             if text.trim().is_empty() || text.trim() == "{}" {
-                return (None, Some(PreflightDetectionResult {
-                    detection_type: "empty_response".to_string(),
-                    reason: format!("上游返回空响应或仅包含空对象，内容长度: {}", text.len()),
-                    status_code: 502,
-                }));
+                return (
+                    None,
+                    Some(PreflightDetectionResult {
+                        detection_type: "empty_response".to_string(),
+                        reason: format!("上游返回空响应或仅包含空对象，内容长度: {}", text.len()),
+                        status_code: 502,
+                    }),
+                );
             }
 
             let lower_text = text.to_lowercase();
@@ -694,11 +684,14 @@ async fn perform_stream_preflight_check(
                 || lower_text.contains("401")
                 || lower_text.contains("api key") && lower_text.contains("invalid")
             {
-                return (None, Some(PreflightDetectionResult {
-                    detection_type: "auth_error".to_string(),
-                    reason: "上游返回认证错误，API Key 无效或已过期".to_string(),
-                    status_code: 502,
-                }));
+                return (
+                    None,
+                    Some(PreflightDetectionResult {
+                        detection_type: "auth_error".to_string(),
+                        reason: "上游返回认证错误，API Key 无效或已过期".to_string(),
+                        status_code: 502,
+                    }),
+                );
             }
 
             if lower_text.contains("insufficient_quota")
@@ -706,21 +699,27 @@ async fn perform_stream_preflight_check(
                 || lower_text.contains("quota_exceeded")
                 || lower_text.contains("rate_limit")
             {
-                return (None, Some(PreflightDetectionResult {
-                    detection_type: "quota_error".to_string(),
-                    reason: "上游返回余额不足或速率限制错误".to_string(),
-                    status_code: 429,
-                }));
+                return (
+                    None,
+                    Some(PreflightDetectionResult {
+                        detection_type: "quota_error".to_string(),
+                        reason: "上游返回余额不足或速率限制错误".to_string(),
+                        status_code: 429,
+                    }),
+                );
             }
 
             if lower_text.contains("tool_calls")
                 && (lower_text.contains("malformed") || lower_text.contains("parse_error"))
             {
-                return (None, Some(PreflightDetectionResult {
-                    detection_type: "malformed_tool_call".to_string(),
-                    reason: "上游返回畸形工具调用格式".to_string(),
-                    status_code: 500,
-                }));
+                return (
+                    None,
+                    Some(PreflightDetectionResult {
+                        detection_type: "malformed_tool_call".to_string(),
+                        reason: "上游返回畸形工具调用格式".to_string(),
+                        status_code: 500,
+                    }),
+                );
             }
 
             debug!(
@@ -731,19 +730,25 @@ async fn perform_stream_preflight_check(
         }
         Ok(Ok(None)) => {
             warn!("上游流在预检测阶段立即结束");
-            (None, Some(PreflightDetectionResult {
-                detection_type: "immediate_stream_end".to_string(),
-                reason: "上游流在预检测阶段立即结束，无任何数据".to_string(),
-                status_code: 502,
-            }))
+            (
+                None,
+                Some(PreflightDetectionResult {
+                    detection_type: "immediate_stream_end".to_string(),
+                    reason: "上游流在预检测阶段立即结束，无任何数据".to_string(),
+                    status_code: 502,
+                }),
+            )
         }
         Ok(Err(e)) => {
             warn!(error = %e, "预检测阶段读取流失败");
-            (None, Some(PreflightDetectionResult {
-                detection_type: "stream_read_error".to_string(),
-                reason: format!("读取上游流失败: {}", e),
-                status_code: 502,
-            }))
+            (
+                None,
+                Some(PreflightDetectionResult {
+                    detection_type: "stream_read_error".to_string(),
+                    reason: format!("读取上游流失败: {}", e),
+                    status_code: 502,
+                }),
+            )
         }
         Err(_) => {
             warn!(timeout_secs = timeout_secs, "⏰ 预检测超时");
