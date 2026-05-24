@@ -152,7 +152,11 @@ mod simple_message_conversion {
         });
         let chat = call(&input.to_string(), "deepseek-chat", false);
         let msgs = messages_from(&chat);
-        assert_eq!(msgs.len(), 2, "pending assistant text discarded before user message");
+        assert_eq!(
+            msgs.len(),
+            2,
+            "pending assistant text discarded before user message"
+        );
         assert_eq!(msgs[0]["role"], "user");
         assert_eq!(msgs[0]["content"], "q1");
         assert_eq!(msgs[1]["role"], "user");
@@ -212,7 +216,10 @@ mod content_formats {
         assert_eq!(content[0]["type"], "text");
         assert_eq!(content[0]["text"], "describe this");
         assert_eq!(content[1]["type"], "image_url");
-        assert_eq!(content[1]["image_url"]["url"], "https://example.com/img.png");
+        assert_eq!(
+            content[1]["image_url"]["url"],
+            "https://example.com/img.png"
+        );
     }
 
     #[test]
@@ -781,10 +788,14 @@ mod tools_conversion {
         let chat = call(&input.to_string(), "deepseek-chat", false);
         let tools = chat["tools"].as_array().unwrap();
         let params = &tools[0]["function"]["parameters"];
-        let city_required = params["properties"]["city"]["required"].as_array().unwrap();
-        assert!(city_required.is_empty(), "required should be empty array");
-        let unit_required = params["properties"]["unit"]["required"].as_array().unwrap();
-        assert!(unit_required.is_empty(), "required should be empty array");
+        assert!(
+            params["properties"]["city"].get("required").is_none(),
+            "required should not be injected"
+        );
+        assert!(
+            params["properties"]["unit"].get("required").is_none(),
+            "required should not be injected"
+        );
     }
 
     #[test]
@@ -950,8 +961,11 @@ mod top_level_parameters {
             });
             let chat = call(&input.to_string(), "deepseek-chat", false);
             assert_eq!(
-                chat["reasoning_effort"], expected.to_string(),
-                "effort '{}' should map to '{}'", input_effort, expected
+                chat["reasoning_effort"],
+                expected.to_string(),
+                "effort '{}' should map to '{}'",
+                input_effort,
+                expected
             );
         }
     }

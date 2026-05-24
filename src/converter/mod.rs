@@ -16,8 +16,7 @@ struct ReasoningEntry {
     stored_at: Instant,
 }
 
-static REASONING_STORE: LazyLock<DashMap<String, ReasoningEntry>> =
-    LazyLock::new(DashMap::new);
+static REASONING_STORE: LazyLock<DashMap<String, ReasoningEntry>> = LazyLock::new(DashMap::new);
 
 static CLEANUP_STARTED: OnceLock<()> = OnceLock::new();
 
@@ -54,7 +53,13 @@ pub fn get_and_remove_reasoning(call_id: &str) -> Option<String> {
 
 pub fn set_reasoning(call_id: String, text: String) {
     let now = Instant::now();
-    REASONING_STORE.insert(call_id, ReasoningEntry { text, stored_at: now });
+    REASONING_STORE.insert(
+        call_id,
+        ReasoningEntry {
+            text,
+            stored_at: now,
+        },
+    );
     // Inline eager cleanup of already-expired entries
     REASONING_STORE.retain(|_, v| v.stored_at.elapsed().as_secs() < REASONING_TTL_SECS);
 }

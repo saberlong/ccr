@@ -3,8 +3,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::{routing::get, routing::post, Router};
-use tower_http::limit::RequestBodyLimitLayer;
 use tokio::net::TcpListener;
+use tower_http::limit::RequestBodyLimitLayer;
 use tracing::info;
 
 use ccr::config::Config;
@@ -27,7 +27,7 @@ async fn main() -> anyhow::Result<()> {
     let config = Config::load(&config_path)?;
     log::init_tracing(&config.logging)?;
 
-    info!("加载配置文件: {}", config_path);
+    info!("Loading config file: {}", config_path);
     let config = Arc::new(config);
 
     let client = reqwest::Client::builder()
@@ -44,13 +44,15 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/health", get(ccr::handler::health))
         .route("/v1/responses", post(ccr::handler::responses_handler))
-        .layer(RequestBodyLimitLayer::new(state.config.server.max_body_size))
+        .layer(RequestBodyLimitLayer::new(
+            state.config.server.max_body_size,
+        ))
         .with_state(state);
 
     let addr = SocketAddr::new(host.parse()?, port);
 
-    info!("CCR 代理启动: http://{}", addr);
-    info!("端点: POST /v1/responses → {}", upstream_url);
+    info!("CCR proxy started on http://{}", addr);
+    info!("Endpoint: POST /v1/responses → {}", upstream_url);
 
     let listener = TcpListener::bind(addr).await?;
 

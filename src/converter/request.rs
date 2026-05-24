@@ -131,8 +131,7 @@ fn convert_input_to_messages(input: &Value, chat: &mut Value) {
                         .take()
                         .or_else(|| pending_reasoning.clone())
                         .or_else(|| {
-                            first_call_id
-                                .and_then(|id| super::get_and_remove_reasoning(&id))
+                            first_call_id.and_then(|id| super::get_and_remove_reasoning(&id))
                         });
                     if let Some(ref text) = reasoning_text {
                         if !text.is_empty() {
@@ -140,12 +139,11 @@ fn convert_input_to_messages(input: &Value, chat: &mut Value) {
                             debug!(
                                 reasoning_len = text.len(),
                                 tool_calls_count = count,
-                                "已为合并的 function_call 消息注入 reasoning_content"
+                                "Injected reasoning_content for merged function_call message"
                             );
                         }
                     }
-                    if let Some(messages) =
-                        chat.get_mut("messages").and_then(|m| m.as_array_mut())
+                    if let Some(messages) = chat.get_mut("messages").and_then(|m| m.as_array_mut())
                     {
                         messages.push(msg);
                     }
@@ -183,25 +181,18 @@ fn convert_input_to_messages(input: &Value, chat: &mut Value) {
             };
 
             for item in items {
-                let item_type = item
-                    .get("type")
-                    .and_then(|t| t.as_str())
-                    .unwrap_or("");
+                let item_type = item.get("type").and_then(|t| t.as_str()).unwrap_or("");
 
                 if item_type.is_empty() && item.get("role").is_some() {
-                    let raw_role = item
-                        .get("role")
-                        .and_then(|r| r.as_str())
-                        .unwrap_or("user");
+                    let raw_role = item.get("role").and_then(|r| r.as_str()).unwrap_or("user");
                     let normalized = normalize_role(raw_role);
 
                     if normalized == "assistant" {
                         let content = extract_message_text_content(item);
                         pending_assistant_content = content;
-                        pending_assistant_reasoning = pending_reasoning.take().or_else(|| {
-                            item.get("reasoning")
-                                .and_then(extract_reasoning_text)
-                        });
+                        pending_assistant_reasoning = pending_reasoning
+                            .take()
+                            .or_else(|| item.get("reasoning").and_then(extract_reasoning_text));
                     } else {
                         discard_pending(
                             &mut pending_func_calls,
@@ -215,10 +206,8 @@ fn convert_input_to_messages(input: &Value, chat: &mut Value) {
                 } else {
                     match item_type {
                         "message" => {
-                            let raw_role = item
-                                .get("role")
-                                .and_then(|r| r.as_str())
-                                .unwrap_or("user");
+                            let raw_role =
+                                item.get("role").and_then(|r| r.as_str()).unwrap_or("user");
                             let normalized = normalize_role(raw_role);
 
                             if normalized == "assistant" {
@@ -226,8 +215,7 @@ fn convert_input_to_messages(input: &Value, chat: &mut Value) {
                                 pending_assistant_content = content;
                                 pending_assistant_reasoning =
                                     pending_reasoning.take().or_else(|| {
-                                        item.get("reasoning")
-                                            .and_then(extract_reasoning_text)
+                                        item.get("reasoning").and_then(extract_reasoning_text)
                                     });
                             } else {
                                 discard_pending(
@@ -289,7 +277,7 @@ fn convert_input_to_messages(input: &Value, chat: &mut Value) {
                                 &mut pending_reasoning,
                                 &mut has_active_tool_turn,
                             );
-                            debug!(%item_type, "跳过未处理的 input item 类型");
+                            debug!(%item_type, "Skipping unhandled input item type");
                         }
                     }
                 }
@@ -312,36 +300,35 @@ struct FuncCallItem {
 }
 
 fn extract_message_text_content(item: &Value) -> Option<String> {
-    item.get("content")
-        .and_then(|c| match c {
-            Value::String(text) => {
-                let t = text.trim();
-                if t.is_empty() {
-                    None
-                } else {
-                    Some(t.to_string())
-                }
+    item.get("content").and_then(|c| match c {
+        Value::String(text) => {
+            let t = text.trim();
+            if t.is_empty() {
+                None
+            } else {
+                Some(t.to_string())
             }
-            Value::Array(parts) => {
-                let text: Vec<&str> = parts
-                    .iter()
-                    .filter_map(|p| {
-                        let pt = p.get("type").and_then(|t| t.as_str()).unwrap_or("");
-                        if pt == "input_text" || pt == "output_text" || pt == "text" {
-                            p.get("text").and_then(|t| t.as_str())
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-                if text.is_empty() {
-                    None
-                } else {
-                    Some(text.join("\n"))
-                }
+        }
+        Value::Array(parts) => {
+            let text: Vec<&str> = parts
+                .iter()
+                .filter_map(|p| {
+                    let pt = p.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                    if pt == "input_text" || pt == "output_text" || pt == "text" {
+                        p.get("text").and_then(|t| t.as_str())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if text.is_empty() {
+                None
+            } else {
+                Some(text.join("\n"))
             }
-            _ => None,
-        })
+        }
+        _ => None,
+    })
 }
 
 fn convert_message_item(item: &Value, chat: &mut Value, pending_reasoning: &mut Option<String>) {
@@ -352,7 +339,7 @@ fn convert_message_item(item: &Value, chat: &mut Value, pending_reasoning: &mut 
         .to_string();
 
     let role = normalize_role(&raw_role);
-    debug!(original_role = %raw_role, normalized_role = %role, "角色标准化");
+    debug!(original_role = %raw_role, normalized_role = %role, "Role normalization");
 
     let mut msg = json!({"role": role, "content": ""});
 
@@ -497,10 +484,7 @@ fn extract_reasoning_text(item: &Value) -> Option<String> {
         if let Some(summary) = obj.get("summary") {
             if let Some(arr) = summary.as_array() {
                 for entry in arr {
-                    let entry_type = entry
-                        .get("type")
-                        .and_then(|t| t.as_str())
-                        .unwrap_or("");
+                    let entry_type = entry.get("type").and_then(|t| t.as_str()).unwrap_or("");
                     if entry_type == "summary_text" {
                         if let Some(t) = entry.get("text").and_then(|v| v.as_str()) {
                             let trimmed = t.trim();
@@ -529,10 +513,7 @@ fn convert_tools(tools: &[Value], chat: &mut Value) {
     let mut chat_tools: Vec<Value> = Vec::new();
 
     for tool in tools {
-        let tool_type = tool
-            .get("type")
-            .and_then(|t| t.as_str())
-            .unwrap_or("");
+        let tool_type = tool.get("type").and_then(|t| t.as_str()).unwrap_or("");
 
         if tool_type != "function" && !tool_type.is_empty() {
             continue;
@@ -540,7 +521,7 @@ fn convert_tools(tools: &[Value], chat: &mut Value) {
 
         let name = tool
             .get("name")
-            .or_else(|| tool.get("function.name"))
+            .or_else(|| tool.get("function").and_then(|f| f.get("name")))
             .and_then(|v| v.as_str())
             .unwrap_or("");
         if name.is_empty() {
@@ -549,19 +530,17 @@ fn convert_tools(tools: &[Value], chat: &mut Value) {
 
         let description = tool
             .get("description")
-            .or_else(|| tool.get("function.description"))
+            .or_else(|| tool.get("function").and_then(|f| f.get("description")))
             .and_then(|v| v.as_str());
 
         let parameters = tool
             .get("parameters")
-            .or_else(|| tool.get("function.parameters"));
+            .or_else(|| tool.get("function").and_then(|f| f.get("parameters")));
 
-        let mut params = match parameters {
+        let params = match parameters {
             Some(p) => p.clone(),
             None => json!({}),
         };
-
-        normalize_tool_parameters(&mut params);
 
         let mut func = json!({
             "name": name,
@@ -579,17 +558,5 @@ fn convert_tools(tools: &[Value], chat: &mut Value) {
 
     if !chat_tools.is_empty() {
         chat["tools"] = Value::Array(chat_tools);
-    }
-}
-
-fn normalize_tool_parameters(params: &mut Value) {
-    if let Some(props) = params.get_mut("properties") {
-        if let Some(fields) = props.as_object_mut() {
-            for (key, field) in fields.iter_mut() {
-                if !key.is_empty() {
-                    field["required"] = json!([]);
-                }
-            }
-        }
     }
 }

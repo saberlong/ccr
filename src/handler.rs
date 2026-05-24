@@ -32,63 +32,68 @@ pub async fn responses_handler(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, AppError> {
-    info!("收到 /v1/responses 请求");
-    debug!(body_size = body.len(), "请求体大小");
+    info!("Received /v1/responses request");
+    debug!(body_size = body.len(), "Request body size");
 
     if body.is_empty() {
-        warn!("请求体为空");
-        return Err(AppError::bad_request("请求体不能为空".to_string()));
+        warn!("Request body is empty");
+        return Err(AppError::bad_request(
+            "Request body cannot be empty".to_string(),
+        ));
     }
 
     let body_str = String::from_utf8_lossy(&body);
-    debug!(request_body = %body_str, "原始请求内容");
+    debug!(request_body = %body_str, "Raw request content");
 
     let original_request: Value = match serde_json::from_slice(&body) {
         Ok(req) => {
-            debug!("JSON 解析成功");
+            debug!("JSON parsed successfully");
             req
         }
         Err(e) => {
-            error!(error = %e, body = %body_str, "JSON 解析失败");
-            return Err(AppError::bad_request(format!("无效的请求 JSON: {}", e)));
+            error!(error = %e, body = %body_str, "JSON parse failed");
+            return Err(AppError::bad_request(format!(
+                "Invalid request JSON: {}",
+                e
+            )));
         }
     };
 
-    debug!(request = ?original_request, "解析后的请求对象");
+    debug!(request = ?original_request, "Parsed request object");
 
     let is_stream = original_request
         .get("stream")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    debug!(is_stream = is_stream, "流式模式");
+    debug!(is_stream = is_stream, "Stream mode");
 
     let model = original_request
         .get("model")
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
-    debug!(model = %model, "原始模型");
+    debug!(model = %model, "Original model");
 
     let mapped_model = state.config.map_model(&model);
-    debug!(mapped_model = %mapped_model, "映射后模型");
+    debug!(mapped_model = %mapped_model, "Mapped model");
 
-    debug!(model = %model, mapped_model = %mapped_model, stream = is_stream, "转换请求");
+    debug!(model = %model, mapped_model = %mapped_model, stream = is_stream, "Converting request");
 
     let converted =
-        match converter::convert_responses_to_chat_request(&body, &mapped_model, is_stream) {
+        match converter::convert_responses_to_chat_request(&body, mapped_model, is_stream) {
             Ok(conv) => {
-                debug!("请求转换成功");
+                debug!("Request conversion succeeded");
                 conv
             }
             Err(e) => {
-                error!(error = %e, "请求转换失败");
+                error!(error = %e, "Request conversion failed");
                 return Err(e.into());
             }
         };
 
-    debug!(converted_body = %String::from_utf8_lossy(&converted.body), "转换后的请求体");
+    debug!(converted_body = %String::from_utf8_lossy(&converted.body), "Converted request body");
 
-    debug!("发送到上游: {}", state.config.upstream.url);
+    debug!("Sending to upstream: {}", state.config.upstream.url);
 
     let mut req = state
         .client
@@ -101,36 +106,39 @@ pub async fn responses_handler(
         .body(converted.body.clone());
 
     for (key, value) in &state.config.upstream.extra_headers {
-        debug!(header_key = %key, header_value = %value, "添加自定义头");
+        debug!(header_key = %key, header_value = %value, "Adding custom header");
         req = req.header(key.as_str(), value.as_str());
     }
 
     if let Some(content_type) = headers.get("content-type") {
         if let Ok(ct) = content_type.to_str() {
-            debug!(original_content_type = %ct, "检测到原始 Content-Type (将被忽略)");
+            debug!(original_content_type = %ct, "Detected original Content-Type (will be ignored)");
             if ct != "application/json" {
-                debug!("原始 Content-Type 不是 application/json，保持使用 application/json");
+                debug!("Original Content-Type is not application/json, keeping application/json");
             }
         }
     }
 
     let resp = match req.send().await {
         Ok(r) => {
-            debug!(status = %r.status(), "上游响应成功");
+            debug!(status = %r.status(), "Upstream response succeeded");
             r
         }
         Err(e) => {
-            error!(error = %e, url = %state.config.upstream.url, "上游请求失败");
-            return Err(AppError::upstream_error(format!("上游请求失败: {}", e)));
+            error!(error = %e, url = %state.config.upstream.url, "Upstream request failed");
+            return Err(AppError::upstream_error(format!(
+                "Upstream request failed: {}",
+                e
+            )));
         }
     };
 
     let status = resp.status();
     let upstream_headers = resp.headers().clone();
-    debug!(upstream_status = %status, is_stream = is_stream, "处理上游响应");
+    debug!(upstream_status = %status, is_stream = is_stream, "Processing upstream response");
 
     if is_stream {
-        info!("进入流式响应处理");
+        info!("Entering stream response handling");
         handle_stream_response(
             resp,
             status,
@@ -140,7 +148,7 @@ pub async fn responses_handler(
         )
         .await
     } else {
-        info!("进入非流式响应处理");
+        info!("Entering non-stream response handling");
         handle_non_stream_response(
             resp,
             status,
@@ -157,25 +165,31 @@ async fn handle_non_stream_response(
     status: StatusCode,
     upstream_headers: HeaderMap,
     original_request: Value,
-    mapped_model: String,
+    mapped_model: &str,
 ) -> Result<Response, AppError> {
-    debug!("开始读取非流式响应体");
+    debug!("Reading non-stream response body");
 
     let body_bytes = match resp.bytes().await {
         Ok(bytes) => {
-            debug!(body_size = bytes.len(), "读取上游响应成功");
+            debug!(
+                body_size = bytes.len(),
+                "Upstream response body read successfully"
+            );
             bytes
         }
         Err(e) => {
-            error!(error = %e, "读取上游响应失败");
-            return Err(AppError::upstream_error(format!("读取上游响应失败: {}", e)));
+            error!(error = %e, "Failed to read upstream response body");
+            return Err(AppError::upstream_error(format!(
+                "Failed to read upstream response body: {}",
+                e
+            )));
         }
     };
 
     if status.is_client_error() || status.is_server_error() {
-        warn!(status = %status, "上游返回错误状态码，透传响应");
+        warn!(status = %status, "Upstream returned error status, passing through response");
         let body_str = String::from_utf8_lossy(&body_bytes);
-        debug!(error_body = %body_str, "错误响应内容");
+        debug!(error_body = %body_str, "Error response content");
         return Ok(forward_upstream_response(
             status,
             upstream_headers,
@@ -183,25 +197,30 @@ async fn handle_non_stream_response(
         ));
     }
 
-    debug!("开始转换 Chat 响应为 Responses 格式");
+    debug!("Converting Chat response to Responses format");
 
     let responses_resp = converter::convert_chat_response_to_responses(
         &body_bytes,
         &original_request,
-        Some(&mapped_model),
+        Some(mapped_model),
     );
 
     match responses_resp {
         Ok(resp_data) => {
-            debug!("Chat 响应转换成功");
+            debug!("Chat response conversion succeeded");
             let json_body = match serde_json::to_vec(&resp_data) {
                 Ok(json) => {
-                    debug!(response_size = json.len(), "序列化响应成功");
+                    debug!(
+                        response_size = json.len(),
+                        "Response serialized successfully"
+                    );
                     json
                 }
                 Err(e) => {
-                    error!(error = %e, "序列化响应失败");
-                    return Err(AppError::internal("序列化响应失败".to_string()));
+                    error!(error = %e, "Response serialization failed");
+                    return Err(AppError::internal(
+                        "Response serialization failed".to_string(),
+                    ));
                 }
             };
 
@@ -212,16 +231,19 @@ async fn handle_non_stream_response(
             {
                 Ok(resp) => resp,
                 Err(e) => {
-                    error!(error = %e, "构建响应失败");
-                    return Err(AppError::internal(format!("构建响应失败: {}", e)));
+                    error!(error = %e, "Failed to build response");
+                    return Err(AppError::internal(format!(
+                        "Failed to build response: {}",
+                        e
+                    )));
                 }
             };
 
-            debug!("返回转换后的 Responses 格式响应");
+            debug!("Returning converted Responses format response");
             Ok(response)
         }
         Err(e) => {
-            warn!(error = %e, "Chat响应转换失败，回退透传上游响应");
+            warn!(error = %e, "Chat response conversion failed, falling back to upstream pass-through");
             Ok(forward_upstream_response(
                 status,
                 upstream_headers,
@@ -238,13 +260,21 @@ async fn handle_stream_response(
     original_request: Value,
     streaming_config: &crate::config::StreamingConfig,
 ) -> Result<Response, AppError> {
-    debug!("开始处理流式响应");
+    debug!("Processing stream response");
 
     if status.is_client_error() || status.is_server_error() {
-        warn!(status = %status, "上游返回错误状态码（流式）");
-        let body_bytes = resp.bytes().await.unwrap_or_default();
+        warn!(status = %status, "Upstream returned error status (stream)");
+        let body_bytes = match resp.bytes().await {
+            Ok(b) => b,
+            Err(e) => {
+                error!(error = %e, "Failed to read upstream error response body");
+                return Err(AppError::upstream_error(
+                    "Failed to read upstream response body".to_string(),
+                ));
+            }
+        };
         let error_body = String::from_utf8_lossy(&body_bytes);
-        error!(upstream_status = %status, error_response = %error_body, "上游错误响应详情");
+        error!(upstream_status = %status, error_response = %error_body, "Upstream error response details");
         return Ok(forward_upstream_response(
             status,
             upstream_headers,
@@ -252,12 +282,12 @@ async fn handle_stream_response(
         ));
     }
 
-    debug!(original_request = ?original_request, "流式转换使用的原始请求");
+    debug!(original_request = ?original_request, "Original request for stream conversion");
 
-    // 流预检测机制（如果启用）
+    // Stream preflight check (if enabled)
     let mut preflight_chunk: Option<Bytes> = None;
     if streaming_config.enable_preflight {
-        debug!("执行流预检测");
+        debug!("Running stream preflight check");
         let (saved_chunk, preflight_result) =
             perform_stream_preflight_check(&mut resp, streaming_config.preflight_timeout_secs)
                 .await;
@@ -265,14 +295,14 @@ async fn handle_stream_response(
             warn!(
                 preflight_type = %preflight_result.detection_type,
                 reason = %preflight_result.reason,
-                "🚫 流预检测失败，拒绝请求"
+                "Stream preflight check failed, rejecting request"
             );
 
             let error_response = create_preflight_error_response(&preflight_result);
             return Ok(error_response);
         }
         preflight_chunk = saved_chunk;
-        info!("✅ 流预检测通过");
+        info!("Stream preflight check passed");
     }
 
     let original_request = Arc::new(original_request);
@@ -304,10 +334,9 @@ async fn handle_stream_response(
                     let mut partial = match line_buf.lock() {
                         Ok(guard) => guard,
                         Err(e) => {
-                            error!(error = %e, "获取行缓冲区锁失败");
-                            return Some(Err(axum::Error::new(std::io::Error::new(
-                                std::io::ErrorKind::Other,
-                                "行缓冲区锁被污染",
+                            error!(error = %e, "Failed to acquire line buffer lock");
+                            return Some(Err(axum::Error::new(std::io::Error::other(
+                                "Line buffer lock poisoned",
                             ))));
                         }
                     };
@@ -316,7 +345,7 @@ async fn handle_stream_response(
                     let ends_with_newline = bytes.last() == Some(&b'\n');
                     *partial = String::new();
 
-                    debug!(chunk_size = bytes.len(), chunk_content = %chunk_text, "收到上游流数据块");
+                    debug!(chunk_size = bytes.len(), chunk_content = %chunk_text, "Received upstream stream data chunk");
 
                     let mut events = Vec::new();
                     let lines: Vec<&str> = full_text.lines().collect();
@@ -325,46 +354,46 @@ async fn handle_stream_response(
                     for (i, line) in lines.iter().enumerate() {
                         if last_is_partial && i == lines.len() - 1 {
                             partial.push_str(line);
-                            debug!(partial_line = %line, "缓存不完整的 SSE 行");
+                            debug!(partial_line = %line, "Buffering incomplete SSE line");
                             break;
                         }
-                        debug!(line = %line, "处理 SSE 行");
-                        let mut state = match stream_state.lock() {
+                        debug!(line = %line, "Processing SSE line");
+                        let mut state_guard = match stream_state.lock() {
                             Ok(guard) => guard,
                             Err(e) => {
-                                error!(error = %e, "获取流状态锁失败");
-                                return Some(Err(axum::Error::new(std::io::Error::new(
-                                    std::io::ErrorKind::Other,
-                                    "流状态锁被污染",
+                                error!(error = %e, "Failed to acquire stream state lock");
+                                return Some(Err(axum::Error::new(std::io::Error::other(
+                                    "Stream state lock poisoned",
                                 ))));
                             }
                         };
+                        let state = state_guard.get_or_insert_with(converter::stream::StreamState::new);
                         let line_events = converter::convert_chat_stream_line(
                             line,
-                            &mut state,
+                            state,
                             &original_request,
                         );
 
-                        // 检测 response.completed 事件
+                        // Detect response.completed event
                         if line_events.iter().any(|e| e.contains("response.completed")) {
-                            debug!("检测到 response.completed 事件");
+                            debug!("Detected response.completed event");
                             completed_sent.store(true, Ordering::SeqCst);
                         }
 
-                        debug!(event_count = line_events.len(), "生成的事件数量");
+                        debug!(event_count = line_events.len(), "Generated event count");
                         events.extend(line_events);
                     }
 
                     if events.is_empty() {
-                        debug!("当前数据块没有生成事件");
+                        debug!("No events generated from current data chunk");
                         None
                     } else {
-                        debug!(total_events = events.len(), "返回事件流");
+                        debug!(total_events = events.len(), "Returning event stream");
                         Some(Ok::<Bytes, axum::Error>(Bytes::from(events.join(""))))
                     }
                 }
                 Err(e) => {
-                    error!(error = %e, "读取上游流数据错误");
+                    error!(error = %e, "Error reading upstream stream data");
                     Some(Err(axum::Error::new(e)))
                 }
             }
@@ -375,13 +404,13 @@ async fn handle_stream_response(
         keepalive_interval_secs = streaming_config.keepalive_interval_secs,
         total_timeout_secs = streaming_config.total_timeout_secs,
         enable_usage_injection = streaming_config.enable_usage_injection,
-        "创建增强版流式响应处理器"
+        "Creating enhanced stream response handler"
     );
 
-    // 使用 Box::pin 包装以支持非 Unpin 流
+    // Use Box::pin to wrap non-Unpin stream
     let pinned_converted = Box::pin(converted_stream);
 
-    // 使用 async_stream 宏创建带 Keep-Alive、超时控制和兜底机制的完整流
+    // Use async_stream macro to create complete stream with Keep-Alive, timeout control, and fallback mechanism
     let final_stream = create_enhanced_stream_async(
         pinned_converted,
         streaming_config,
@@ -390,7 +419,7 @@ async fn handle_stream_response(
         completed_sent_for_fallback,
     );
 
-    debug!("构建最终响应体");
+    debug!("Building final response body");
 
     let body = Body::from_stream(Box::pin(final_stream));
 
@@ -404,13 +433,16 @@ async fn handle_stream_response(
     {
         Ok(resp) => resp,
         Err(e) => {
-            error!(error = %e, "构建流式响应失败");
-            return Err(AppError::internal(format!("构建流式响应失败: {}", e)));
+            error!(error = %e, "Failed to build streaming response");
+            return Err(AppError::internal(format!(
+                "Failed to build streaming response: {}",
+                e
+            )));
         }
     };
 
     info!(
-        "✅ 流式响应处理器已启动（Keep-Alive={}s, 超时={}s, Usage注入={})",
+        "Stream response handler started (Keep-Alive={}s, Timeout={}s, Usage injection={})",
         streaming_config.keepalive_interval_secs,
         streaming_config.total_timeout_secs,
         streaming_config.enable_usage_injection
@@ -438,15 +470,15 @@ fn create_enhanced_stream_async(
         let mut _fallback_triggered = false;
 
         loop {
-            // 超时检查
+            // Timeout check
             if start_time.elapsed() >= total_timeout {
                 warn!(
                     elapsed_secs = start_time.elapsed().as_secs(),
                     timeout_secs = total_timeout.as_secs(),
-                    "⏰ 流式响应超时，强制结束"
+                    "Stream response timeout, forcing end"
                 );
 
-                // 触发兜底机制
+                // Trigger fallback mechanism
                 if !completed_sent.load(Ordering::SeqCst) && !_fallback_triggered {
                     _fallback_triggered = true;
                     if let Some(fallback_data) = trigger_fallback_mechanism(
@@ -461,49 +493,49 @@ fn create_enhanced_stream_async(
             }
 
             tokio::select! {
-                // 主数据流事件
+                // Main data stream event
                 item = inner_stream.next() => {
                     match item {
                         Some(Ok(bytes)) => {
-                            // 重置 Keep-Alive 定时器
+                            // Reset Keep-Alive timer
                             keepalive_timer.as_mut().reset_after(keepalive_interval);
                             yield Ok(bytes);
                         }
                         Some(Err(e)) => {
                             if is_client_disconnect_error(&e) {
-                                info!("客户端断开连接（正常行为）");
+                                info!("Client disconnected (normal behavior)");
                             } else {
-                                error!(error = %e, "流传输错误");
+                                error!(error = %e, "Stream transport error");
                             }
                             yield Err(e);
                         }
                         None => {
-                            // 流结束，触发兜底机制
+                            // Stream ended, trigger fallback mechanism
                             if !completed_sent.load(Ordering::SeqCst) && !_fallback_triggered {
                                 _fallback_triggered = true;
-                                warn!("🔧 上游流结束但未收到 [DONE] 标记，触发兜底完成机制");
+                                warn!("Upstream stream ended without [DONE] marker, triggering fallback completion");
 
                                 if let Some(fallback_data) = trigger_fallback_mechanism(
                                     &stream_state,
                                     &original_request,
                                     enable_usage_injection,
                                 ) {
-                                    info!("📤 兜底完成事件已发送");
+                                    info!("Fallback completion event sent");
                                     yield Ok(fallback_data);
                                 } else {
-                                    warn!("⚠️ 兜底机制未生成任何事件");
+                                    warn!("Fallback mechanism generated no events");
                                 }
                             }
 
-                            info!("📤 流式响应完全结束");
+                            info!("Stream response fully ended");
                             break;
                         }
                     }
                 }
 
-                // Keep-Alive 心跳
+                // Keep-Alive heartbeat
                 _ = keepalive_timer.tick() => {
-                    debug!("💓 发送 SSE Keep-Alive 心跳");
+                    debug!("Sending SSE Keep-Alive heartbeat");
                     let keepalive_msg = Bytes::from_static(b": keepalive\n\n");
                     yield Ok(keepalive_msg);
                 }
@@ -520,7 +552,7 @@ fn trigger_fallback_mechanism(
     let mut state = match stream_state.lock() {
         Ok(guard) => guard,
         Err(e) => {
-            error!(error = %e, "触发兜底机制时获取流状态锁失败");
+            error!(error = %e, "Failed to acquire stream state lock during fallback");
             return None;
         }
     };
@@ -530,12 +562,12 @@ fn trigger_fallback_mechanism(
             crate::converter::stream::generate_completed_events_fallback(st, original_request);
 
         if !fallback_events.is_empty() && enable_usage_injection {
-            // 如果启用 usage 注入，检查并修补最后一个事件的 usage 字段
+            // If usage injection enabled, check and patch usage field of last event
             if let Some(last_event) = fallback_events.last_mut() {
                 if last_event.contains("response.completed") {
                     if let Some(patched_event) = inject_usage_if_needed(last_event, st) {
                         *last_event = patched_event;
-                        info!("✅ 已注入/修补 usage 字段到 response.completed 事件");
+                        info!("Injected/patched usage field into response.completed event");
                     }
                 }
             }
@@ -543,15 +575,15 @@ fn trigger_fallback_mechanism(
 
         if !fallback_events.is_empty() {
             info!(
-                "✅ 兜底机制成功 - 生成 {} 个完成事件",
+                "Fallback mechanism succeeded - generated {} completion events",
                 fallback_events.len()
             );
             return Some(Bytes::from(fallback_events.join("")));
         } else {
-            warn!("⚠️ 兜底机制未生成任何事件");
+            warn!("Fallback mechanism generated no events");
         }
     } else {
-        warn!("⚠️ StreamState 为空，无法生成兜底事件");
+        warn!("StreamState is empty, cannot generate fallback events");
     }
 
     None
@@ -563,16 +595,16 @@ fn inject_usage_if_needed(
 ) -> Option<String> {
     use serde_json::json;
 
-    // 解析现有的事件 JSON
+    // Parse existing event JSON
     let mut event_json: serde_json::Value = match serde_json::from_str(completed_event) {
         Ok(v) => v,
         Err(e) => {
-            warn!(error = %e, "无法解析 response.completed 事件进行 usage 注入");
+            warn!(error = %e, "Cannot parse response.completed event for usage injection");
             return None;
         }
     };
 
-    // 检查是否已有有效的 usage 数据
+    // Check if valid usage data already exists
     let has_valid_usage = event_json
         .pointer("/response/usage/output_tokens")
         .and_then(|v| v.as_i64())
@@ -580,15 +612,15 @@ fn inject_usage_if_needed(
         .unwrap_or(false);
 
     if has_valid_usage {
-        debug!("response.completed 已包含有效 usage 数据，无需注入");
+        debug!("response.completed already contains valid usage data, no injection needed");
         return None;
     }
 
-    // 本地估算 token 统计
+    // Local token estimation
     let text_len = st.get_text_len() as i64;
     let reasoning_len = st.get_reasoning_len() as i64;
 
-    // 简单估算：每4个字符约等于1个token
+    // Simple estimate: ~1 token per 4 characters
     let estimated_output_tokens = (text_len / 4).max(1);
     let estimated_reasoning_tokens = if reasoning_len > 0 {
         reasoning_len / 4
@@ -596,7 +628,7 @@ fn inject_usage_if_needed(
         0
     };
 
-    let estimated_input_tokens = st.get_input_tokens().max(10); // 至少10个input tokens
+    let estimated_input_tokens = st.get_input_tokens().max(10); // At least 10 input tokens
 
     info!(
         input_tokens = estimated_input_tokens,
@@ -604,10 +636,10 @@ fn inject_usage_if_needed(
         reasoning_tokens = estimated_reasoning_tokens,
         text_length = text_len,
         reasoning_length = reasoning_len,
-        "📊 注入本地估算的 usage 数据"
+        "Injecting locally estimated usage data"
     );
 
-    // 构建 usage 对象
+    // Build usage object
     let total_tokens =
         estimated_input_tokens + estimated_output_tokens + estimated_reasoning_tokens;
     let mut usage = json!({
@@ -616,14 +648,14 @@ fn inject_usage_if_needed(
         "total_tokens": total_tokens,
     });
 
-    // 添加 reasoning tokens 详情（如果有）
+    // Add reasoning tokens details (if any)
     if estimated_reasoning_tokens > 0 {
         usage["output_tokens_details"] = json!({
             "reasoning_tokens": estimated_reasoning_tokens
         });
     }
 
-    // 注入到事件中
+    // Inject into event
     if let Some(resp_obj) = event_json.get_mut("response") {
         resp_obj["usage"] = usage;
     }
@@ -631,18 +663,19 @@ fn inject_usage_if_needed(
     match serde_json::to_string(&event_json) {
         Ok(patched) => Some(patched),
         Err(e) => {
-            warn!(error = %e, "序列化修补后的事件失败");
+            warn!(error = %e, "Failed to serialize patched event");
             None
         }
     }
 }
 
 fn is_client_disconnect_error(e: &axum::Error) -> bool {
-    let error_msg = e.to_string().to_lowercase();
-    error_msg.contains("connection reset")
-        || error_msg.contains("broken pipe")
-        || error_msg.contains("client disconnected")
-        || error_msg.contains("aborted")
+    let error_msg = e.to_string();
+    let lower = error_msg.to_ascii_lowercase();
+    lower.contains("connection reset")
+        || lower.contains("broken pipe")
+        || lower.contains("client disconnected")
+        || lower.contains("aborted")
 }
 
 #[derive(Debug, Clone)]
@@ -671,7 +704,10 @@ async fn perform_stream_preflight_check(
                     None,
                     Some(PreflightDetectionResult {
                         detection_type: "empty_response".to_string(),
-                        reason: format!("上游返回空响应或仅包含空对象，内容长度: {}", text.len()),
+                        reason: format!(
+                            "Upstream returned empty response or empty object, content length: {}",
+                            text.len()
+                        ),
                         status_code: 502,
                     }),
                 );
@@ -688,7 +724,9 @@ async fn perform_stream_preflight_check(
                     None,
                     Some(PreflightDetectionResult {
                         detection_type: "auth_error".to_string(),
-                        reason: "上游返回认证错误，API Key 无效或已过期".to_string(),
+                        reason:
+                            "Upstream returned authentication error, API key invalid or expired"
+                                .to_string(),
                         status_code: 502,
                     }),
                 );
@@ -703,7 +741,7 @@ async fn perform_stream_preflight_check(
                     None,
                     Some(PreflightDetectionResult {
                         detection_type: "quota_error".to_string(),
-                        reason: "上游返回余额不足或速率限制错误".to_string(),
+                        reason: "Upstream returned quota exceeded or rate limit error".to_string(),
                         status_code: 429,
                     }),
                 );
@@ -716,7 +754,7 @@ async fn perform_stream_preflight_check(
                     None,
                     Some(PreflightDetectionResult {
                         detection_type: "malformed_tool_call".to_string(),
-                        reason: "上游返回畸形工具调用格式".to_string(),
+                        reason: "Upstream returned malformed tool call format".to_string(),
                         status_code: 500,
                     }),
                 );
@@ -724,35 +762,49 @@ async fn perform_stream_preflight_check(
 
             debug!(
                 preflight_content_len = text.len(),
-                "✅ 预检测通过 - 响应看起来正常"
+                "Preflight passed - response looks normal"
             );
             (Some(chunk), None)
         }
         Ok(Ok(None)) => {
-            warn!("上游流在预检测阶段立即结束");
+            warn!("Upstream stream ended immediately during preflight");
             (
                 None,
                 Some(PreflightDetectionResult {
                     detection_type: "immediate_stream_end".to_string(),
-                    reason: "上游流在预检测阶段立即结束，无任何数据".to_string(),
+                    reason: "Upstream stream ended immediately during preflight, no data"
+                        .to_string(),
                     status_code: 502,
                 }),
             )
         }
         Ok(Err(e)) => {
-            warn!(error = %e, "预检测阶段读取流失败");
+            warn!(error = %e, "Stream read failed during preflight");
             (
                 None,
                 Some(PreflightDetectionResult {
                     detection_type: "stream_read_error".to_string(),
-                    reason: format!("读取上游流失败: {}", e),
+                    reason: format!("Failed to read upstream stream: {}", e),
                     status_code: 502,
                 }),
             )
         }
         Err(_) => {
-            warn!(timeout_secs = timeout_secs, "⏰ 预检测超时");
-            (None, None)
+            warn!(
+                timeout_secs = timeout_secs,
+                "Preflight timeout, upstream response too slow"
+            );
+            (
+                None,
+                Some(PreflightDetectionResult {
+                    detection_type: "preflight_timeout".to_string(),
+                    reason: format!(
+                        "Preflight timeout ({}s), upstream response too slow",
+                        timeout_secs
+                    ),
+                    status_code: 504,
+                }),
+            )
         }
     }
 }
@@ -777,15 +829,15 @@ fn create_preflight_error_response(result: &PreflightDetectionResult) -> Respons
     {
         Ok(resp) => resp,
         Err(e) => {
-            error!(error = %e, "构建预检测错误响应失败");
+            error!(error = %e, "Failed to build preflight error response");
             Response::builder()
                 .status(500)
                 .header("Content-Type", "application/json")
                 .body(Body::from(
-                    r#"{"error":{"type":"internal_error","message":"构建响应失败"}}"#,
+                    r#"{"error":{"type":"internal_error","message":"Failed to build response"}}"#,
                 ))
                 .unwrap_or_else(|_| {
-                    // 最后的兜底，理论上不会执行
+                    // Final fallback, should not be reached in theory
                     axum::http::response::Response::new(Body::empty())
                 })
         }
@@ -808,12 +860,12 @@ fn forward_upstream_response(
     match response.body(Body::from(body_bytes)) {
         Ok(resp) => resp,
         Err(e) => {
-            error!(error = %e, "构建上游转发响应失败");
+            error!(error = %e, "Failed to build upstream forward response");
             Response::builder()
                 .status(500)
                 .header("Content-Type", "application/json")
                 .body(Body::from(
-                    r#"{"error":{"type":"internal_error","message":"构建响应失败"}}"#,
+                    r#"{"error":{"type":"internal_error","message":"Failed to build response"}}"#,
                 ))
                 .unwrap_or_else(|_| axum::http::response::Response::new(Body::empty()))
         }
@@ -865,7 +917,7 @@ impl IntoResponse for AppError {
         {
             Ok(resp) => resp,
             Err(e) => {
-                error!(error = %e, "构建错误响应失败");
+                error!(error = %e, "Failed to build error response");
                 axum::http::response::Response::new(Body::empty())
             }
         }
@@ -874,7 +926,7 @@ impl IntoResponse for AppError {
 
 impl From<anyhow::Error> for AppError {
     fn from(e: anyhow::Error) -> Self {
-        error!(error = %e, "内部错误");
+        error!(error = %e, "Internal error");
         AppError::internal(format!("{}", e))
     }
 }

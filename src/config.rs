@@ -138,17 +138,17 @@ fn default_log_level() -> String {
 impl Config {
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
         let content = fs::read_to_string(&path)
-            .with_context(|| format!("无法读取配置文件: {:?}", path.as_ref()))?;
+            .with_context(|| format!("Cannot read config file: {:?}", path.as_ref()))?;
         let config: Config = toml::from_str(&content)
-            .with_context(|| format!("解析配置文件失败: {:?}", path.as_ref()))?;
+            .with_context(|| format!("Failed to parse config file: {:?}", path.as_ref()))?;
         Ok(config)
     }
 
-    pub fn map_model(&self, model: &str) -> String {
+    pub fn map_model<'a>(&'a self, model: &'a str) -> &'a str {
         if let Some(mapped) = self.upstream.model_mapping.get(model) {
-            mapped.clone()
+            mapped.as_str()
         } else {
-            model.to_string()
+            model
         }
     }
 }

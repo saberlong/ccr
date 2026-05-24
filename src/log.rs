@@ -1,10 +1,10 @@
 use std::fs;
 
 use crate::config::LogConfig;
+use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_subscriber::{
     fmt, layer::Layer, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter,
 };
-use tracing_appender::rolling::{RollingFileAppender, Rotation};
 
 pub fn init_tracing(config: &LogConfig) -> anyhow::Result<()> {
     let env_filter = format!("ccr={}", config.level);
@@ -61,16 +61,16 @@ pub fn setup_panic_hook() {
         let location = panic_info
             .location()
             .map(|loc| format!("{}:{}:{}", loc.file(), loc.line(), loc.column()))
-            .unwrap_or_else(|| "未知位置".to_string());
+            .unwrap_or_else(|| "unknown location".to_string());
 
         let payload = panic_info
             .payload()
             .downcast_ref::<&str>()
             .map(|s| s.to_string())
-            .unwrap_or_else(|| "非字符串 panic".to_string());
+            .unwrap_or_else(|| "non-string panic".to_string());
 
         let thread = std::thread::current();
-        let thread_name = thread.name().unwrap_or("未命名线程");
+        let thread_name = thread.name().unwrap_or("unnamed thread");
 
         let backtrace = std::backtrace::Backtrace::capture();
 
@@ -79,15 +79,15 @@ pub fn setup_panic_hook() {
             location = %location,
             thread = %thread_name,
             backtrace = %backtrace,
-            "🚨 应用程序发生 Panic"
+            "Application Panic"
         );
 
-        eprintln!("\n🚨 应用程序发生 Panic");
-        eprintln!("📍 位置: {}", location);
-        eprintln!("💬 信息: {}", payload);
-        eprintln!("🧵 线程: {}", thread_name);
-        eprintln!("\n📋 调用栈:");
+        eprintln!("\nApplication Panic");
+        eprintln!("Location: {}", location);
+        eprintln!("Message: {}", payload);
+        eprintln!("Thread: {}", thread_name);
+        eprintln!("\nBacktrace:");
         eprintln!("{}", backtrace);
-        eprintln!("\n请检查日志获取详细信息");
+        eprintln!("\nCheck logs for details");
     }));
 }

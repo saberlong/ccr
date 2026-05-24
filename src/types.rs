@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-// ========== Codex Responses API 类型 ==========
+// ========== Codex Responses API Types ==========
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResponsesRequest {
@@ -65,7 +65,7 @@ pub struct ReasoningConfig {
     pub summary: Option<String>,
 }
 
-// ========== OpenAI Chat Completions 类型 ==========
+// ========== OpenAI Chat Completions API Types ==========
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatRequest {
@@ -215,7 +215,7 @@ pub struct CompletionTokensDetails {
     pub reasoning_tokens: Option<i64>,
 }
 
-// ========== Codex Responses API 响应类型 ==========
+// ========== Codex Responses API Response Types ==========
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResponsesResponse {
@@ -332,7 +332,7 @@ pub struct ResponsesError {
     pub message: String,
 }
 
-// ========== SSE Chat 流式块 ==========
+// ========== SSE Chat Stream Chunks ==========
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatStreamChunk {
