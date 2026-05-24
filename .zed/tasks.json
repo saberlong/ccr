@@ -1,0 +1,44 @@
+[
+  {
+    "label": "Build ccr (debug)",
+    "command": "cargo",
+    "args": ["build"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "tags": ["rust", "build"]
+  },
+  {
+    "label": "Build ccr (release)",
+    "command": "cargo",
+    "args": ["build", "--release"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "tags": ["rust", "build"]
+  },
+  {
+    "label": "Check ccr",
+    "command": "cargo",
+    "args": ["check"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "tags": ["rust", "check"]
+  },
+  {
+    "label": "Run ccr (debug, config.toml)",
+    "command": "cargo",
+    "args": ["run", "--", "config.toml"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "tags": ["rust", "run"]
+  },
+  {
+    "label": "Test ccr",
+    "command": "cargo",
+    "args": ["test"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "tags": ["rust", "test"]
+  },
+  {
+    "label": "Clippy ccr",
+    "command": "cargo",
+    "args": ["clippy"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "tags": ["rust", "lint"]
+  }
+]

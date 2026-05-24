@@ -1,0 +1,49 @@
+# CCR - Codex Responses → OpenAI Chat Completions 代理配置
+
+[server]
+host = "0.0.0.0"
+port = 8180
+connect_timeout_secs = 30
+request_timeout_secs = 1800
+max_body_size = 10485760
+
+[upstream]
+url = "https://api.openai.com/v1/chat/completions"
+api_key = "sk-your-api-key-here"
+
+# 可选的模型映射：Codex 请求的 model → 上游 OpenAI Chat 的 model
+[upstream.model_mapping]
+# "claude-sonnet-4-20250514" = "gpt-4o"
+"gpt-5.5" = "deepseek-v4-pro"
+"gpt-5.4" = "deepseek-v4-pro"
+"gpt-5.4-mini" = "deepseek-v4-flash"
+"gpt-5.3-codex" = "deepseek-v4-flash"
+"gpt-5.2" = "deepseek-v4-flash"
+
+# 可选的自定义请求头（添加到上游请求）
+[upstream.extra_headers]
+# "X-Custom-Header" = "value"
+
+[streaming]
+# SSE Keep-Alive 保活间隔（秒），防止客户端因长时间无数据断开连接
+keepalive_interval_secs = 15
+# 启用 Usage 注入：当上游未返回 usage 时，本地估算 token 统计
+enable_usage_injection = true
+# 流预检测超时（秒）：发送响应前检测空响应/错误
+preflight_timeout_secs = 120
+# 流总超时（秒）：整个流式响应的最大允许时间
+total_timeout_secs = 3600
+# 启用流预检测机制（空响应、畸形工具调用、认证错误检测）
+enable_preflight = true
+
+[logging]
+level = "info"
+# 设为 true 启用 JSON 格式日志
+json = false
+# 日志文件目录（留空则不输出到文件）
+dir = "logs"
+# 日志文件名前缀
+file_prefix = "ccr"
+# 是否按日期滚动（每天一个新文件）
+rotation = true
+retention_days = 3
