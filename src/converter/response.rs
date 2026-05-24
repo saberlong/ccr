@@ -58,7 +58,7 @@ pub fn convert_chat_response_to_responses(
 
     let mut outputs: Vec<OutputItem> = Vec::new();
     let mut reasoning_texts: Vec<String> = Vec::new();
-    let mut content_texts: Vec<String> = Vec::new();
+    let mut msg_content_parts: Vec<OutputContent> = Vec::new();
     let mut function_calls: Vec<OutputItem> = Vec::new();
 
     if let Some(choices) = &chat.choices {
@@ -69,19 +69,44 @@ pub fn convert_chat_response_to_responses(
                 }
 
                 if let Some(content) = &msg.content {
-                    let content_text = match content {
-                        MessageContent::String(s) => s.clone(),
-                        MessageContent::Array(parts) => parts
-                            .iter()
-                            .filter_map(|p| match p {
-                                ContentPart::Text { text } => Some(text.clone()),
-                                _ => None,
-                            })
-                            .collect::<Vec<_>>()
-                            .join("\n"),
-                    };
-                    if !content_text.is_empty() {
-                        content_texts.push(content_text);
+                    match content {
+                        MessageContent::String(s) => {
+                            if !s.is_empty() {
+                                msg_content_parts.push(OutputContent {
+                                    content_type: "output_text".to_string(),
+                                    text: Some(s.clone()),
+                                    annotations: Some(vec![]),
+                                    logprobs: Some(vec![]),
+                                    image_url: None,
+                                });
+                            }
+                        }
+                        MessageContent::Array(parts) => {
+                            for part in parts {
+                                match part {
+                                    ContentPart::Text { text } => {
+                                        if !text.is_empty() {
+                                            msg_content_parts.push(OutputContent {
+                                                content_type: "output_text".to_string(),
+                                                text: Some(text.clone()),
+                                                annotations: Some(vec![]),
+                                                logprobs: Some(vec![]),
+                                                image_url: None,
+                                            });
+                                        }
+                                    }
+                                    ContentPart::ImageUrl { image_url } => {
+                                        msg_content_parts.push(OutputContent {
+                                            content_type: "image_url".to_string(),
+                                            text: None,
+                                            annotations: None,
+                                            logprobs: None,
+                                            image_url: Some(image_url.clone()),
+                                        });
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -132,20 +157,14 @@ pub fn convert_chat_response_to_responses(
         });
     }
 
-    if !content_texts.is_empty() {
+    if !msg_content_parts.is_empty() {
         let msg_id = format!("msg_{}_0", chat_id);
-        let full_text = content_texts.join("");
         outputs.push(OutputItem {
             id: Some(msg_id),
             item_type: "message".to_string(),
             status: Some("completed".to_string()),
             role: Some("assistant".to_string()),
-            content: Some(vec![OutputContent {
-                content_type: "output_text".to_string(),
-                text: Some(full_text),
-                annotations: Some(vec![]),
-                logprobs: Some(vec![]),
-            }]),
+            content: Some(msg_content_parts),
             summary: None,
             arguments: None,
             call_id: None,

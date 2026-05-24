@@ -68,7 +68,65 @@ impl Drop for StreamState {
     }
 }
 
+/// Extract image URLs from text content. Handles:
+/// - Markdown image syntax: ![alt](url)
+/// - Raw data: URLs: data:image/...
+fn extract_image_urls_from_text(text: &str) -> Vec<serde_json::Value> {
+    let mut images: Vec<serde_json::Value> = Vec::new();
+    if text.is_empty() {
+        return images;
+    }
+
+    // Scan for data:image URLs
+    let mut remaining = text;
+    while let Some(start) = remaining.find("data:image/") {
+        let slice = &remaining[start..];
+        let end = slice.find(|c: char| c.is_whitespace() || c == ')' || c == '>')
+            .unwrap_or(slice.len());
+        let url = slice[..end].trim_end_matches(')').trim_end_matches('>').to_string();
+        if !url.is_empty() && !images.iter().any(|v| v["image_url"]["url"].as_str() == Some(&url)) {
+            images.push(serde_json::json!({
+                "type": "image_url",
+                "image_url": {"url": url},
+            }));
+        }
+        remaining = &slice[end..];
+        if remaining.is_empty() { break; }
+    }
+
+    // Scan for markdown image syntax: ![alt](url)
+    let mut remaining = text;
+    while let Some(start) = remaining.find("![") {
+        let slice = &remaining[start..];
+        if let Some(bracket_end) = slice.find(']') {
+            let after_alt = &slice[bracket_end + 1..];
+            if after_alt.starts_with('(') {
+                let paren_content = &after_alt[1..];
+                if let Some(paren_end) = paren_content.find(')') {
+                    let url = paren_content[..paren_end].to_string();
+                    if !url.is_empty()
+                        && (url.starts_with("http://") || url.starts_with("https://") || url.starts_with("data:"))
+                        && !images.iter().any(|v| v["image_url"]["url"].as_str() == Some(&url))
+                    {
+                        images.push(serde_json::json!({
+                            "type": "image_url",
+                            "image_url": {"url": url},
+                        }));
+                    }
+                    remaining = &paren_content[paren_end + 1..];
+                    continue;
+                }
+            }
+        }
+        remaining = &slice[2..];
+        if remaining.is_empty() { break; }
+    }
+
+    images
+}
+
 impl StreamState {
+
     fn new() -> Self {
         Self {
             seq: 0,
@@ -867,23 +925,28 @@ fn close_text_block(st: &mut StreamState) -> Vec<String> {
         &serde_json::to_string(&part_done).unwrap_or_default(),
     ));
 
-    let item_done = json!({
-        "type": "response.output_item.done",
-        "sequence_number": st.next_seq(),
-        "output_index": output_index,
-        "item": {
-            "id": st.msg_id,
-            "type": "message",
-            "status": "completed",
-            "content": [{
-                "type": "output_text",
-                "annotations": [],
-                "logprobs": [],
-                "text": full_text,
-            }],
-            "role": "assistant"
-        }
-    });
+    let image_parts = extract_image_urls_from_text(&full_text);
+    let item_done = {
+        let mut content_parts: Vec<serde_json::Value> = vec![json!({
+            "type": "output_text",
+            "annotations": [],
+            "logprobs": [],
+            "text": full_text,
+        })];
+        content_parts.extend(image_parts);
+        json!({
+            "type": "response.output_item.done",
+            "sequence_number": st.next_seq(),
+            "output_index": output_index,
+            "item": {
+                "id": st.msg_id,
+                "type": "message",
+                "status": "completed",
+                "content": content_parts,
+                "role": "assistant"
+            }
+        })
+    };
     events.push(emit_sse_event(
         "response.output_item.done",
         &serde_json::to_string(&item_done).unwrap_or_default(),
@@ -1111,16 +1174,19 @@ fn generate_completed_events_internal(
     }
 
     if !st.text_buf.is_empty() || !st.msg_id.is_empty() {
+        let image_parts = extract_image_urls_from_text(&st.text_buf);
+        let mut content_parts: Vec<serde_json::Value> = vec![json!({
+            "type": "output_text",
+            "annotations": [],
+            "logprobs": [],
+            "text": st.text_buf,
+        })];
+        content_parts.extend(image_parts);
         outputs.push(json!({
             "id": st.msg_id,
             "type": "message",
             "status": "completed",
-            "content": [{
-                "type": "output_text",
-                "annotations": [],
-                "logprobs": [],
-                "text": st.text_buf,
-            }],
+            "content": content_parts,
             "role": "assistant"
         }));
     }
