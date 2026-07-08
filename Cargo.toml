@@ -24,3 +24,4 @@ pin-project-lite = "0.2"
 async-stream = "0.3"
 mimalloc = { version = "0.1", default-features = false }
 dashmap = "6"
+tower-http = { version = "0.7.0", features = ["limit"] }
