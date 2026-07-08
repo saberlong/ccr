@@ -16,6 +16,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::config::Config;
 use crate::converter;
+use crate::utf8_stream::Utf8StreamBuffer;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -311,6 +312,7 @@ async fn handle_stream_response(
     ));
     let completed_sent = Arc::new(AtomicBool::new(false));
     let line_buf: Arc<std::sync::Mutex<String>> = Arc::new(std::sync::Mutex::new(String::new()));
+    let utf8_buf: Arc<std::sync::Mutex<Utf8StreamBuffer>> = Arc::new(std::sync::Mutex::new(Utf8StreamBuffer::new()));
     let mut initial_chunks: Vec<Result<Bytes, reqwest::Error>> = Vec::new();
     if let Some(chunk) = preflight_chunk {
         initial_chunks.push(Ok(chunk));
@@ -322,12 +324,14 @@ async fn handle_stream_response(
     let original_request_for_fallback = original_request.clone();
     let completed_sent_for_fallback = completed_sent.clone();
     let line_buf_clone = line_buf.clone();
+    let utf8_buf_clone = utf8_buf.clone();
 
     let converted_stream = stream.filter_map(move |chunk| {
         let original_request = original_request_clone.clone();
         let stream_state = stream_state.clone();
         let completed_sent = completed_sent_clone.clone();
         let line_buf = line_buf_clone.clone();
+        let utf8_buf = utf8_buf_clone.clone();
         async move {
             match chunk {
                 Ok(bytes) => {
@@ -340,7 +344,17 @@ async fn handle_stream_response(
                             ))));
                         }
                     };
-                    let chunk_text = String::from_utf8_lossy(&bytes);
+                    let mut utf8_guard = match utf8_buf.lock() {
+                        Ok(guard) => guard,
+                        Err(e) => {
+                            error!(error = %e, "Failed to acquire UTF-8 buffer lock");
+                            return Some(Err(axum::Error::new(std::io::Error::other(
+                                "UTF-8 buffer lock poisoned",
+                            ))));
+                        }
+                    };
+                    let chunk_text = utf8_guard.process_bytes(&bytes);
+                    drop(utf8_guard);
                     let full_text = format!("{}{}", &*partial, chunk_text);
                     let ends_with_newline = bytes.last() == Some(&b'\n');
                     *partial = String::new();
@@ -697,7 +711,8 @@ async fn perform_stream_preflight_check(
 
     match initial_bytes_result {
         Ok(Ok(Some(chunk))) => {
-            let text = String::from_utf8_lossy(&chunk).to_string();
+            let mut preflight_utf8 = Utf8StreamBuffer::new();
+            let text = preflight_utf8.process_bytes(&chunk);
 
             if text.trim().is_empty() || text.trim() == "{}" {
                 return (
@@ -930,3 +945,5 @@ impl From<anyhow::Error> for AppError {
         AppError::internal(format!("{}", e))
     }
 }
+
+
