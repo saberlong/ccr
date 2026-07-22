@@ -312,7 +312,8 @@ async fn handle_stream_response(
     ));
     let completed_sent = Arc::new(AtomicBool::new(false));
     let line_buf: Arc<std::sync::Mutex<String>> = Arc::new(std::sync::Mutex::new(String::new()));
-    let utf8_buf: Arc<std::sync::Mutex<Utf8StreamBuffer>> = Arc::new(std::sync::Mutex::new(Utf8StreamBuffer::new()));
+    let utf8_buf: Arc<std::sync::Mutex<Utf8StreamBuffer>> =
+        Arc::new(std::sync::Mutex::new(Utf8StreamBuffer::new()));
     let mut initial_chunks: Vec<Result<Bytes, reqwest::Error>> = Vec::new();
     if let Some(chunk) = preflight_chunk {
         initial_chunks.push(Ok(chunk));
@@ -945,5 +946,3 @@ impl From<anyhow::Error> for AppError {
         AppError::internal(format!("{}", e))
     }
 }
-
-

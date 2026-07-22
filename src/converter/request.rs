@@ -36,6 +36,11 @@ pub fn convert_responses_to_chat_request(
     }
     if let Some(v) = root.get("user") {
         chat["user"] = v.clone();
+    } else if let Some(v) = root.get("safety_identifier") {
+        chat["user"] = v.clone();
+    }
+    if let Some(v) = root.get("previous_response_id") {
+        chat["previous_response_id"] = v.clone();
     }
 
     if let Some(instructions) = root.get("instructions").and_then(|v| v.as_str()) {
@@ -68,6 +73,7 @@ pub fn convert_responses_to_chat_request(
                 "medium" => "medium",
                 "high" => "high",
                 "xhigh" => "xhigh",
+                "max" => "max",
                 _ => "auto",
             };
             chat["reasoning_effort"] = Value::String(effort.to_string());
@@ -269,14 +275,26 @@ fn convert_input_to_messages(input: &Value, chat: &mut Value) {
                                 convert_function_call_output_item(item, chat);
                             }
                         }
-                        _ => {
-                            discard_pending(
+                        "compaction_trigger" => {
+                            flush_assistant_with_tool_calls(
+                                chat,
                                 &mut pending_func_calls,
                                 &mut pending_assistant_content,
                                 &mut pending_assistant_reasoning,
-                                &mut pending_reasoning,
+                                &pending_reasoning,
                                 &mut has_active_tool_turn,
                             );
+                            flush_pending_assistant(
+                                chat,
+                                &mut pending_assistant_content,
+                                &mut pending_assistant_reasoning,
+                            );
+                            debug!("Skipping compaction_trigger input item");
+                        }
+                        "compaction" | "item_reference" => {
+                            debug!(%item_type, "Skipping opaque input item type");
+                        }
+                        _ => {
                             debug!(%item_type, "Skipping unhandled input item type");
                         }
                     }

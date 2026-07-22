@@ -1,4 +1,6 @@
-use ccr::converter::stream::{convert_chat_stream_line, generate_completed_events_fallback, StreamState};
+use ccr::converter::stream::{
+    convert_chat_stream_line, generate_completed_events_fallback, StreamState,
+};
 use serde_json::{json, Value};
 
 fn sse_line(json_val: &Value) -> String {
@@ -149,7 +151,8 @@ fn multiple_content_deltas_accumulate() {
             "created": 1700000000, "model": "deepseek-chat",
             "choices": [{"index": 0, "delta": {"content": "Hello"}}]
         })),
-        &mut st, &req,
+        &mut st,
+        &req,
     );
     let events = convert_chat_stream_line(
         &sse_line(&json!({
@@ -157,7 +160,8 @@ fn multiple_content_deltas_accumulate() {
             "created": 1700000000, "model": "deepseek-chat",
             "choices": [{"index": 0, "delta": {"content": " World"}}]
         })),
-        &mut st, &req,
+        &mut st,
+        &req,
     );
     let types = event_types(&events);
     assert!(!types.contains(&"response.output_item.added".to_string()));
@@ -205,10 +209,16 @@ fn think_tag_content_becomes_reasoning() {
     });
     let events = convert_chat_stream_line(&sse_line(&delta), &mut st, &req);
     let types = event_types(&events);
-    assert!(types.contains(&"response.reasoning_summary_text.delta".to_string()),
-        "expected reasoning events for <thinking> content, got: {:?}", types);
-    assert!(types.contains(&"response.output_text.delta".to_string()),
-        "expected content events for non-thinking part, got: {:?}", types);
+    assert!(
+        types.contains(&"response.reasoning_summary_text.delta".to_string()),
+        "expected reasoning events for <thinking> content, got: {:?}",
+        types
+    );
+    assert!(
+        types.contains(&"response.output_text.delta".to_string()),
+        "expected content events for non-thinking part, got: {:?}",
+        types
+    );
 }
 
 #[test]
@@ -301,7 +311,8 @@ fn tool_call_id_and_name_arrive_separately() {
             "created": 1700000000, "model": "deepseek-chat",
             "choices": [{"index": 0, "delta": {"tool_calls": [{"index": 0, "id": "call_abc"}]}}]
         })),
-        &mut st, &req,
+        &mut st,
+        &req,
     );
     let events = convert_chat_stream_line(
         &sse_line(&json!({
@@ -311,7 +322,8 @@ fn tool_call_id_and_name_arrive_separately() {
                 "tool_calls": [{"index": 0, "function": {"name": "search"}}]
             }}]
         })),
-        &mut st, &req,
+        &mut st,
+        &req,
     );
     let types = event_types(&events);
     assert!(types.contains(&"response.output_item.added".to_string()));
@@ -332,7 +344,8 @@ fn finish_reason_closes_open_blocks() {
             "created": 1700000000, "model": "deepseek-chat",
             "choices": [{"index": 0, "delta": {"content": "Hello"}}]
         })),
-        &mut st, &req,
+        &mut st,
+        &req,
     );
     let events = convert_chat_stream_line(
         &sse_line(&json!({
@@ -340,7 +353,8 @@ fn finish_reason_closes_open_blocks() {
             "created": 1700000000, "model": "deepseek-chat",
             "choices": [{"index": 0, "finish_reason": "stop"}]
         })),
-        &mut st, &req,
+        &mut st,
+        &req,
     );
     let types = event_types(&events);
     assert!(types.contains(&"response.output_text.done".to_string()));
@@ -370,7 +384,8 @@ fn done_marker_generates_response_completed() {
             "id": "chatcmpl-123", "object": "chat.completion.chunk",
             "created": 1700000000, "model": "deepseek-chat", "choices": []
         })),
-        &mut st, &req,
+        &mut st,
+        &req,
     );
     convert_chat_stream_line(
         &sse_line(&json!({
@@ -378,7 +393,8 @@ fn done_marker_generates_response_completed() {
             "created": 1700000000, "model": "deepseek-chat",
             "choices": [{"index": 0, "delta": {"content": "Hello"}}]
         })),
-        &mut st, &req,
+        &mut st,
+        &req,
     );
     convert_chat_stream_line(
         &sse_line(&json!({
@@ -386,7 +402,8 @@ fn done_marker_generates_response_completed() {
             "created": 1700000000, "model": "deepseek-chat",
             "choices": [{"index": 0, "finish_reason": "stop"}]
         })),
-        &mut st, &req,
+        &mut st,
+        &req,
     );
     let events = convert_chat_stream_line("data: [DONE]", &mut st, &req);
     let types = event_types(&events);
@@ -402,7 +419,8 @@ fn done_marker_with_length_finish_reason_is_incomplete() {
             "id": "chatcmpl-123", "object": "chat.completion.chunk",
             "created": 1700000000, "model": "deepseek-chat", "choices": []
         })),
-        &mut st, &req,
+        &mut st,
+        &req,
     );
     convert_chat_stream_line(
         &sse_line(&json!({
@@ -410,7 +428,8 @@ fn done_marker_with_length_finish_reason_is_incomplete() {
             "created": 1700000000, "model": "deepseek-chat",
             "choices": [{"index": 0, "delta": {"content": "truncated"}}]
         })),
-        &mut st, &req,
+        &mut st,
+        &req,
     );
     convert_chat_stream_line(
         &sse_line(&json!({
@@ -418,13 +437,17 @@ fn done_marker_with_length_finish_reason_is_incomplete() {
             "created": 1700000000, "model": "deepseek-chat",
             "choices": [{"index": 0, "finish_reason": "length"}]
         })),
-        &mut st, &req,
+        &mut st,
+        &req,
     );
     let events = convert_chat_stream_line("data: [DONE]", &mut st, &req);
     let completed = events_by_type(&events, "response.completed");
     assert_eq!(completed.len(), 1);
     assert_eq!(completed[0]["response"]["status"], "incomplete");
-    assert_eq!(completed[0]["response"]["incomplete_details"]["reason"], "max_output_tokens");
+    assert_eq!(
+        completed[0]["response"]["incomplete_details"]["reason"],
+        "max_output_tokens"
+    );
 }
 
 #[test]
@@ -436,7 +459,8 @@ fn fallback_generates_completed_event() {
             "id": "chatcmpl-123", "object": "chat.completion.chunk",
             "created": 1700000000, "model": "deepseek-chat", "choices": []
         })),
-        &mut st, &req,
+        &mut st,
+        &req,
     );
     convert_chat_stream_line(
         &sse_line(&json!({
@@ -444,7 +468,8 @@ fn fallback_generates_completed_event() {
             "created": 1700000000, "model": "deepseek-chat",
             "choices": [{"index": 0, "delta": {"content": "Hello"}}]
         })),
-        &mut st, &req,
+        &mut st,
+        &req,
     );
     let events = generate_completed_events_fallback(&mut st, &req);
     let types = event_types(&events);
@@ -463,7 +488,8 @@ fn fallback_with_no_content_produces_completed() {
             "id": "chatcmpl-123", "object": "chat.completion.chunk",
             "created": 1700000000, "model": "deepseek-chat", "choices": []
         })),
-        &mut st, &req,
+        &mut st,
+        &req,
     );
     let events = generate_completed_events_fallback(&mut st, &req);
     let types = event_types(&events);
@@ -479,16 +505,21 @@ fn full_lifecycle_content_only() {
             "id": "cmpl-1", "object": "chat.completion.chunk",
             "created": 1700000000, "model": "deepseek-chat", "choices": []
         })),
-        &mut st, &req,
+        &mut st,
+        &req,
     );
-    assert_eq!(event_types(&e1), vec!["response.created", "response.in_progress"]);
+    assert_eq!(
+        event_types(&e1),
+        vec!["response.created", "response.in_progress"]
+    );
     let e2 = convert_chat_stream_line(
         &sse_line(&json!({
             "id": "cmpl-1", "object": "chat.completion.chunk",
             "created": 1700000000, "model": "deepseek-chat",
             "choices": [{"index": 0, "delta": {"content": "Hello"}}]
         })),
-        &mut st, &req,
+        &mut st,
+        &req,
     );
     let t2 = event_types(&e2);
     assert!(t2.contains(&"response.output_item.added".to_string()));
@@ -500,7 +531,8 @@ fn full_lifecycle_content_only() {
             "created": 1700000000, "model": "deepseek-chat",
             "choices": [{"index": 0, "finish_reason": "stop"}]
         })),
-        &mut st, &req,
+        &mut st,
+        &req,
     );
     let t3 = event_types(&e3);
     assert!(t3.contains(&"response.output_text.done".to_string()));
@@ -524,7 +556,8 @@ fn full_lifecycle_with_tool_calls() {
             "id": "cmpl-2", "object": "chat.completion.chunk",
             "created": 1700000000, "model": "deepseek-chat", "choices": []
         })),
-        &mut st, &req,
+        &mut st,
+        &req,
     );
     convert_chat_stream_line(
         &sse_line(&json!({
@@ -537,7 +570,8 @@ fn full_lifecycle_with_tool_calls() {
                 }]
             }}]
         })),
-        &mut st, &req,
+        &mut st,
+        &req,
     );
     convert_chat_stream_line(
         &sse_line(&json!({
@@ -545,7 +579,8 @@ fn full_lifecycle_with_tool_calls() {
             "created": 1700000000, "model": "deepseek-chat",
             "choices": [{"index": 0, "finish_reason": "stop"}]
         })),
-        &mut st, &req,
+        &mut st,
+        &req,
     );
     let events = convert_chat_stream_line("data: [DONE]", &mut st, &req);
     let completed = events_by_type(&events, "response.completed");
@@ -563,7 +598,8 @@ fn full_lifecycle_with_usage() {
             "id": "cmpl-3", "object": "chat.completion.chunk",
             "created": 1700000000, "model": "deepseek-chat", "choices": []
         })),
-        &mut st, &req,
+        &mut st,
+        &req,
     );
     convert_chat_stream_line(
         &sse_line(&json!({
@@ -571,7 +607,8 @@ fn full_lifecycle_with_usage() {
             "created": 1700000000, "model": "deepseek-chat",
             "choices": [{"index": 0, "delta": {"content": "Hi"}}]
         })),
-        &mut st, &req,
+        &mut st,
+        &req,
     );
     convert_chat_stream_line(
         &sse_line(&json!({
@@ -580,7 +617,8 @@ fn full_lifecycle_with_usage() {
             "choices": [{"index": 0, "finish_reason": "stop"}],
             "usage": {"prompt_tokens": 15, "completion_tokens": 2, "total_tokens": 17}
         })),
-        &mut st, &req,
+        &mut st,
+        &req,
     );
     let events = convert_chat_stream_line("data: [DONE]", &mut st, &req);
     let completed = events_by_type(&events, "response.completed");
@@ -599,7 +637,8 @@ fn content_after_reasoning_closes_reasoning_block_first() {
             "id": "cmpl-4", "object": "chat.completion.chunk",
             "created": 1700000000, "model": "deepseek-chat", "choices": []
         })),
-        &mut st, &req,
+        &mut st,
+        &req,
     );
     convert_chat_stream_line(
         &sse_line(&json!({
@@ -607,7 +646,8 @@ fn content_after_reasoning_closes_reasoning_block_first() {
             "created": 1700000000, "model": "deepseek-chat",
             "choices": [{"index": 0, "delta": {"reasoning_content": "thinking..."}}]
         })),
-        &mut st, &req,
+        &mut st,
+        &req,
     );
     let events = convert_chat_stream_line(
         &sse_line(&json!({
@@ -615,11 +655,15 @@ fn content_after_reasoning_closes_reasoning_block_first() {
             "created": 1700000000, "model": "deepseek-chat",
             "choices": [{"index": 0, "delta": {"content": "answer"}}]
         })),
-        &mut st, &req,
+        &mut st,
+        &req,
     );
     let types = event_types(&events);
-    assert!(types.contains(&"response.reasoning_summary_text.done".to_string()),
-        "should close reasoning before content, got: {:?}", types);
+    assert!(
+        types.contains(&"response.reasoning_summary_text.done".to_string()),
+        "should close reasoning before content, got: {:?}",
+        types
+    );
     assert!(types.contains(&"response.output_item.added".to_string()));
 }
 
@@ -632,7 +676,8 @@ fn sse_event_format_is_correct() {
             "id": "cmpl-6", "object": "chat.completion.chunk",
             "created": 1700000000, "model": "deepseek-chat", "choices": []
         })),
-        &mut st, &req,
+        &mut st,
+        &req,
     );
     for event in &events {
         assert!(event.starts_with("event: "), "bad event start: {}", event);
@@ -640,4 +685,3 @@ fn sse_event_format_is_correct() {
         assert!(event.ends_with("\n\n"), "bad event end: {}", event);
     }
 }
-
